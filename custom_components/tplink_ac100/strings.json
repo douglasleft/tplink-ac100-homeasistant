@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "TP-Link TL-AC100",
+        "description": "Configure your TP-Link TL-AC100 wireless controller.",
+        "data": {
+          "host": "Host (IP address)",
+          "username": "Username",
+          "password": "Password",
+          "scan_interval": "Scan interval (seconds)",
+          "consider_home": "Consider home (seconds)"
+        },
+        "data_description": {
+          "consider_home": "Time to wait before marking a device as away after it disconnects."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to AC100. Check the IP address.",
+      "invalid_auth": "Authentication failed. Check username and password.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This AC100 is already configured."
+    }
+  }
+}

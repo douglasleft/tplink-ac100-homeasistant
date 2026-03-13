@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "TP-Link TL-AC100",
+        "description": "配置 TP-Link TL-AC100 无线控制器。",
+        "data": {
+          "host": "主机地址（IP）",
+          "username": "用户名",
+          "password": "密码",
+          "scan_interval": "扫描间隔（秒）",
+          "consider_home": "在家判定时间（秒）"
+        },
+        "data_description": {
+          "consider_home": "设备断开连接后，等待多久再标记为离开。"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接到 AC100，请检查 IP 地址。",
+      "invalid_auth": "认证失败，请检查用户名和密码。",
+      "unknown": "发生未知错误。"
+    },
+    "abort": {
+      "already_configured": "该 AC100 已经配置过了。"
+    }
+  }
+}

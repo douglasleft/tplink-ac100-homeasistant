@@ -1,0 +1,5 @@
+{
+  "name": "TP-Link TL-AC100",
+  "render_readme": true,
+  "iot_class": "local_polling"
+}
