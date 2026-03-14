@@ -1,44 +1,57 @@
 # TP-Link TL-AC100 for Home Assistant
 
-A Home Assistant custom integration for TP-Link TL-AC100 wireless controller (new firmware with nonce-based MD5 authentication).
+A Home Assistant custom integration for **TP-Link TL-AC100 wireless controller (firmware v6.0+)**, using nonce-based MD5 authentication.
+
+> **Note**: This integration is designed for AC100 firmware **v6.0 and above**. Older firmware versions that use plaintext password login are not supported.
 
 ## Features
 
 - **Device Tracker**: Track all WiFi clients connected to APs managed by AC100
-- **AP Sensors**: Monitor each AP's status (online/offline), client count, uptime, channel info
-- **Controller Overview**: Total online clients and online APs count
+- **Per-Client Sensors**: IP address, connected AP, SSID, signal strength (dBm), connection time
+- **Client Controls**: Block/Unblock switch, Disconnect button for each client
+- **AP Monitoring**: Online/offline status (binary sensor), client count, uptime
+- **Controller Overview**: Total online clients and online APs on the AC100
 - **Device Hierarchy**: AC100 controller → APs → WiFi clients, all visible in HA device registry
+- **Options Flow**: Adjust scan interval and consider-home time without re-adding
 
-### Terminal (WiFi Client) Attributes
+### Per-Client Sensors (Diagnostic)
 
-| Attribute | Description |
-|-----------|-------------|
-| ip | IP address |
-| mac | MAC address |
-| ap_name | Connected AP name |
-| ssid | Connected SSID |
-| frequency | Band (2.4GHz / 5GHz) |
-| online_time | Connection duration |
-| signal | Signal strength |
-| rx_rate / tx_rate | Link speed |
-| auth_type | Authentication type |
-| blocked | Whether blocked |
+| Sensor | Example | Description |
+|--------|---------|-------------|
+| Signal | -57 dBm | WiFi signal strength |
+| IP Address | 192.168.1.100 | Client IP |
+| Connected AP | TL-AP-3-书房 | Which AP the client is connected to |
+| SSID | MyWiFi | Connected network name |
+| Connected At | 2026/03/11 23:25:56 | When the client connected |
 
-### AP Sensor Attributes
+### Per-Client Controls
 
-| Attribute | Description |
-|-----------|-------------|
-| Status | online / offline |
+| Control | Type | Description |
+|---------|------|-------------|
+| Blocked | Switch | Block/unblock client from network |
+| Disconnect | Button | Kick client off the network |
+
+### Per-AP Sensors
+
+| Sensor | Description |
+|--------|-------------|
+| Status | Online / Offline (binary sensor) |
 | Clients | Number of connected clients |
 | Uptime | AP uptime |
-| Channel / Load | Per-band channel and channel load |
+
+### AC100 Controller Sensors
+
+| Sensor | Description |
+|--------|-------------|
+| Online Clients | Total connected clients |
+| Online APs | Total online APs |
 
 ## Installation
 
-### HACS (Manual Repository)
+### HACS (Recommended)
 
-1. Open HACS → Integrations → 3-dot menu → Custom repositories
-2. Add this repository URL, category: Integration
+1. Open HACS → Integrations → ⋮ menu → Custom repositories
+2. Add `https://github.com/douglasleft/tplink-ac100-homeasistant`, category: Integration
 3. Search for "TP-Link TL-AC100" and install
 4. Restart Home Assistant
 
@@ -49,22 +62,33 @@ A Home Assistant custom integration for TP-Link TL-AC100 wireless controller (ne
 
 ## Configuration
 
-1. Go to Settings → Devices & Services → Add Integration
-2. Search for "TP-Link TL-AC100"
+1. Go to **Settings → Devices & Services → Add Integration**
+2. Search for **"TP-Link TL-AC100"**
 3. Enter your AC100's IP address, username and password
-4. Optionally adjust scan interval and consider-home time
+4. Optionally adjust scan interval (default: 30s) and consider-home time (default: 180s)
+
+These options can also be changed later via **Options** without re-adding the integration.
 
 ## Compatibility
 
-This integration uses the **new firmware** authentication method:
+| Firmware | Supported | Auth Method |
+|----------|-----------|-------------|
+| v6.0+ | ✅ Yes | Nonce + MD5 (`encrypt_type: "3"`) |
+| < v6.0 | ❌ No | Plaintext password (not supported) |
 
-1. Fetch nonce via `get_encrypt_info`
+### Authentication Flow (v6.0+)
+
+1. `POST /` → `get_encrypt_info` → receive `nonce`
 2. Compute `md5(password:nonce)`
-3. Login with `encrypt_type: "3"`
-
-If your AC100 uses the old firmware (direct password login), this integration will not work.
+3. `POST /` → `login` with `encrypt_type: "3"` → receive `stok`
+4. All API calls via `POST /stok={stok}/ds`
 
 ## Notes
 
-- The AC100 only supports **one active management session**. Avoid running multiple HA instances against the same AC100.
-- Communication is over HTTP (the AC100 hardware does not support HTTPS). Deploy on a trusted network.
+- The AC100 only supports **one active management session**. Running multiple HA instances against the same AC100 will cause token conflicts (the integration handles this by re-authenticating each update cycle).
+- Communication is over **HTTP** (the AC100 hardware does not support HTTPS). Deploy on a trusted local network.
+- MAC addresses from the AC100 API use dash-uppercase format (e.g., `10-B7-13-93-5E-C5`). The integration normalizes them to colon-lowercase format (e.g., `10:b7:13:93:5e:c5`) for HA compatibility.
+
+## License
+
+MIT
