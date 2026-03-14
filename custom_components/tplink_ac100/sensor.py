@@ -4,9 +4,17 @@ from __future__ import annotations
 import logging
 import urllib.parse
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
+try:
+    from homeassistant.const import EntityCategory
+except ImportError:
+    from homeassistant.helpers.entity import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -31,7 +39,6 @@ def _fmt_duration(seconds) -> str:
 
 
 def _ac100_device_info(host: str) -> DeviceInfo:
-    """Device info for the AC100 controller."""
     return DeviceInfo(
         identifiers={(DOMAIN, host)},
         name="TP-Link AC100",
@@ -40,12 +47,12 @@ def _ac100_device_info(host: str) -> DeviceInfo:
     )
 
 
-def _ap_device_info(host: str, mac: str, name: str) -> DeviceInfo:
-    """Device info for an AP managed by AC100."""
+def _ap_device_info(host: str, mac: str, name: str, model: str = "") -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, mac)},
         name=name,
         manufacturer="TP-Link",
+        model=model or None,
         via_device=(DOMAIN, host),
     )
 
@@ -59,33 +66,46 @@ async def async_setup_entry(
     coordinator: TLAC100DataCoordinator = hass.data[DOMAIN][entry.entry_id]
     host = entry.data[CONF_HOST]
 
-    tracked: set[str] = set()
+    tracked_aps: set[str] = set()
+    tracked_clients: set[str] = set()
 
     @callback
     def _async_update_items() -> None:
         if not coordinator.data:
             return
-        aps = coordinator.data.get("aps", [])
         new_entities: list[SensorEntity] = []
 
         # --- AC100 controller sensors (created once) ---
-        if "__ac100_clients" not in tracked:
-            tracked.add("__ac100_clients")
+        if "__ac100_clients" not in tracked_aps:
+            tracked_aps.add("__ac100_clients")
             new_entities.append(AC100OnlineClientsSensor(coordinator, host))
-        if "__ac100_aps" not in tracked:
-            tracked.add("__ac100_aps")
+        if "__ac100_aps" not in tracked_aps:
+            tracked_aps.add("__ac100_aps")
             new_entities.append(AC100OnlineAPsSensor(coordinator, host))
 
         # --- Per-AP sensors ---
+        aps = coordinator.data.get("aps", [])
         for ap in aps:
             mac = ap.get("mac", "")
-            if not mac or mac in tracked:
+            if not mac or mac in tracked_aps:
                 continue
-            tracked.add(mac)
+            tracked_aps.add(mac)
             ap_name = urllib.parse.unquote(ap.get("entry_name", mac))
-            new_entities.append(APStatusSensor(coordinator, host, mac, ap_name))
-            new_entities.append(APClientsSensor(coordinator, host, mac, ap_name))
-            new_entities.append(APUptimeSensor(coordinator, host, mac, ap_name))
+            model_id = ap.get("model_id", "")
+            model_name = coordinator.model_map.get(model_id, "")
+            new_entities.append(APClientsSensor(coordinator, host, mac, ap_name, model_name))
+            new_entities.append(APUptimeSensor(coordinator, host, mac, ap_name, model_name))
+
+        # --- Per-client sensors ---
+        devices = coordinator.data.get("devices", {})
+        for mac, info in devices.items():
+            if mac not in tracked_clients:
+                tracked_clients.add(mac)
+                new_entities.append(ClientSignalSensor(coordinator, host, mac))
+                new_entities.append(ClientIPSensor(coordinator, host, mac))
+                new_entities.append(ClientAPSensor(coordinator, host, mac))
+                new_entities.append(ClientSSIDSensor(coordinator, host, mac))
+                new_entities.append(ClientConnectedAtSensor(coordinator, host, mac))
 
         if new_entities:
             async_add_entities(new_entities)
@@ -147,16 +167,15 @@ class AC100OnlineAPsSensor(CoordinatorEntity[TLAC100DataCoordinator], SensorEnti
 # =====================================================================
 
 class _APSensorBase(CoordinatorEntity[TLAC100DataCoordinator], SensorEntity):
-    """Base class for per-AP sensors."""
-
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: TLAC100DataCoordinator, host: str, mac: str, ap_name: str
+        self, coordinator: TLAC100DataCoordinator,
+        host: str, mac: str, ap_name: str, model_name: str,
     ) -> None:
         super().__init__(coordinator)
         self._mac = mac
-        self._attr_device_info = _ap_device_info(host, mac, ap_name)
+        self._attr_device_info = _ap_device_info(host, mac, ap_name, model_name)
 
     @property
     def _ap_info(self) -> dict:
@@ -168,40 +187,6 @@ class _APSensorBase(CoordinatorEntity[TLAC100DataCoordinator], SensorEntity):
         return {}
 
 
-class APStatusSensor(_APSensorBase):
-    """AP online/offline status."""
-
-    _attr_name = "Status"
-    _attr_icon = "mdi:access-point"
-
-    def __init__(self, coordinator, host, mac, ap_name):
-        super().__init__(coordinator, host, mac, ap_name)
-        self._attr_unique_id = f"ac100_ap_{mac}_status"
-
-    @property
-    def native_value(self) -> str:
-        info = self._ap_info
-        if not info:
-            return "unknown"
-        return "online" if info.get("link_status") == "1" else "offline"
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        info = self._ap_info
-        if not info:
-            return {}
-        attrs = {
-            "mac": info.get("mac", ""),
-            "ip": info.get("ip", ""),
-        }
-        rf_entries = info.get("rf_entry", [])
-        for rf in rf_entries:
-            freq = rf.get("freq_name", "")
-            attrs[f"{freq}_channel"] = rf.get("channel", "")
-            attrs[f"{freq}_load"] = urllib.parse.unquote(rf.get("channel_load", ""))
-        return attrs
-
-
 class APClientsSensor(_APSensorBase):
     """Number of clients connected to this AP."""
 
@@ -210,9 +195,9 @@ class APClientsSensor(_APSensorBase):
     _attr_native_unit_of_measurement = "clients"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, coordinator, host, mac, ap_name):
-        super().__init__(coordinator, host, mac, ap_name)
-        self._attr_unique_id = f"ac100_ap_{mac}_clients"
+    def __init__(self, coordinator, host, mac, ap_name, model_name):
+        super().__init__(coordinator, host, mac, ap_name, model_name)
+        self._attr_unique_id = f"ac100_ap_{mac.replace(':', '_')}_clients"
 
     @property
     def native_value(self) -> int:
@@ -230,10 +215,11 @@ class APUptimeSensor(_APSensorBase):
 
     _attr_name = "Uptime"
     _attr_icon = "mdi:clock-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, host, mac, ap_name):
-        super().__init__(coordinator, host, mac, ap_name)
-        self._attr_unique_id = f"ac100_ap_{mac}_uptime"
+    def __init__(self, coordinator, host, mac, ap_name, model_name):
+        super().__init__(coordinator, host, mac, ap_name, model_name)
+        self._attr_unique_id = f"ac100_ap_{mac.replace(':', '_')}_uptime"
 
     @property
     def native_value(self) -> str:
@@ -241,3 +227,132 @@ class APUptimeSensor(_APSensorBase):
         if not info:
             return "unknown"
         return _fmt_duration(info.get("online_time", 0))
+
+
+# =====================================================================
+#  Per-client signal sensor
+# =====================================================================
+
+class _ClientSensorBase(CoordinatorEntity[TLAC100DataCoordinator], SensorEntity):
+    """Base class for per-client sensors."""
+
+    _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(
+        self, coordinator: TLAC100DataCoordinator, host: str, mac: str
+    ) -> None:
+        super().__init__(coordinator)
+        self._host = host
+        self._mac = mac
+
+    @property
+    def _dev_data(self) -> dict:
+        if self.coordinator.data:
+            return self.coordinator.data.get("devices", {}).get(self._mac, {})
+        return {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = self._dev_data
+        hostname = info.get("hostname") or self._mac
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._mac)},
+            name=hostname,
+            via_device=(DOMAIN, self._host),
+            connections={("mac", self._mac)},
+        )
+
+
+class ClientSignalSensor(_ClientSensorBase):
+    """WiFi signal strength of a client."""
+
+    _attr_name = "Signal"
+    _attr_icon = "mdi:wifi"
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_native_unit_of_measurement = "dBm"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, host, mac):
+        super().__init__(coordinator, host, mac)
+        self._attr_unique_id = f"ac100_{mac.replace(':', '_')}_signal"
+
+    @property
+    def native_value(self) -> int | None:
+        rssi = self._dev_data.get("rssi", "")
+        if not rssi or not self._dev_data.get("is_online"):
+            return None
+        try:
+            return int(rssi)
+        except (ValueError, TypeError):
+            return None
+
+
+class ClientIPSensor(_ClientSensorBase):
+    """IP address of a client."""
+
+    _attr_name = "IP Address"
+    _attr_icon = "mdi:ip-network"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, host, mac):
+        super().__init__(coordinator, host, mac)
+        self._attr_unique_id = f"ac100_{mac.replace(':', '_')}_ip"
+
+    @property
+    def native_value(self) -> str | None:
+        return self._dev_data.get("ip") or None
+
+
+class ClientAPSensor(_ClientSensorBase):
+    """Connected AP name of a client."""
+
+    _attr_name = "Connected AP"
+    _attr_icon = "mdi:access-point"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, host, mac):
+        super().__init__(coordinator, host, mac)
+        self._attr_unique_id = f"ac100_{mac.replace(':', '_')}_ap"
+
+    @property
+    def native_value(self) -> str | None:
+        return self._dev_data.get("ap_name") or None
+
+
+class ClientSSIDSensor(_ClientSensorBase):
+    """Connected SSID of a client."""
+
+    _attr_name = "SSID"
+    _attr_icon = "mdi:wifi-settings"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, host, mac):
+        super().__init__(coordinator, host, mac)
+        self._attr_unique_id = f"ac100_{mac.replace(':', '_')}_ssid"
+
+    @property
+    def native_value(self) -> str | None:
+        return self._dev_data.get("ssid") or None
+
+
+class ClientConnectedAtSensor(_ClientSensorBase):
+    """Connection time of a client."""
+
+    _attr_name = "Connected At"
+    _attr_icon = "mdi:clock-start"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, host, mac):
+        super().__init__(coordinator, host, mac)
+        self._attr_unique_id = f"ac100_{mac.replace(':', '_')}_connected_at"
+
+    @property
+    def native_value(self) -> str | None:
+        info = self._dev_data
+        d = info.get("connect_date", "")
+        t = info.get("connect_time", "")
+        if d and t:
+            return f"{d} {t}"
+        return None

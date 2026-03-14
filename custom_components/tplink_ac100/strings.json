@@ -24,5 +24,19 @@
     "abort": {
       "already_configured": "This AC100 is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "AC100 Settings",
+        "data": {
+          "scan_interval": "Scan interval (seconds)",
+          "consider_home": "Consider home (seconds)"
+        },
+        "data_description": {
+          "consider_home": "Time to wait before marking a device as away after it disconnects."
+        }
+      }
+    }
   }
 }

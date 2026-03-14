@@ -4,11 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -51,7 +51,6 @@ class TLAC100ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
-            # Prevent duplicate entries for same host
             await self.async_set_unique_id(host)
             self._abort_if_unique_id_configured()
 
@@ -82,4 +81,47 @@ class TLAC100ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
+        )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> TLAC100OptionsFlow:
+        return TLAC100OptionsFlow(config_entry)
+
+
+class TLAC100OptionsFlow(config_entries.OptionsFlow):
+    """Handle options for TP-Link TL-AC100."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self._config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current_scan = self._config_entry.options.get(
+            CONF_SCAN_INTERVAL,
+            self._config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+        )
+        current_home = self._config_entry.options.get(
+            CONF_CONSIDER_HOME,
+            self._config_entry.data.get(CONF_CONSIDER_HOME, DEFAULT_CONSIDER_HOME),
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_SCAN_INTERVAL, default=current_scan): vol.All(
+                        int, vol.Range(min=10, max=300)
+                    ),
+                    vol.Optional(CONF_CONSIDER_HOME, default=current_home): vol.All(
+                        int, vol.Range(min=0, max=600)
+                    ),
+                }
+            ),
         )

@@ -24,5 +24,19 @@
     "abort": {
       "already_configured": "该 AC100 已经配置过了。"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "AC100 设置",
+        "data": {
+          "scan_interval": "扫描间隔（秒）",
+          "consider_home": "在家判定时间（秒）"
+        },
+        "data_description": {
+          "consider_home": "设备断开连接后，等待多久再标记为离开。"
+        }
+      }
+    }
   }
 }

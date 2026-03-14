@@ -11,3 +11,6 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+generate_*.py
+/icon.png
+/logo.png
