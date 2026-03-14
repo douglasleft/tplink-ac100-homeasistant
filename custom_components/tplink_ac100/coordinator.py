@@ -40,12 +40,12 @@ class TLAC100DataCoordinator(DataUpdateCoordinator):
         self._model_map_fetched = False
 
     async def _async_update_data(self) -> dict[str, Any]:
-        # Force fresh login each cycle to avoid stale token issues
-        # (AC100 only supports one active session)
-        try:
-            await self.client.async_login()
-        except TLAC100ApiError as err:
-            raise UpdateFailed(f"Login failed: {err}") from err
+        # Only login if no token yet; _api() handles re-auth on -40401
+        if not self.client._stok:
+            try:
+                await self.client.async_login()
+            except TLAC100ApiError as err:
+                raise UpdateFailed(f"Login failed: {err}") from err
 
         terminals: list[dict] = []
         aps: list[dict] = []

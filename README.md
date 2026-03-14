@@ -85,7 +85,8 @@ These options can also be changed later via **Options** without re-adding the in
 
 ## Notes
 
-- The AC100 only supports **one active management session**. Running multiple HA instances against the same AC100 will cause token conflicts (the integration handles this by re-authenticating each update cycle).
+- **建议为 Home Assistant 单独创建一个 AC100 管理账号**，避免与日常使用的 admin 账号互相踢 session。AC100 同一账号只支持一个活跃会话，如果你在浏览器登录 AC100 管理页面，会导致 HA 的 token 失效（集成会自动重新登录，但会产生短暂中断）。
+- **Tip: Create a dedicated AC100 account for Home Assistant** to avoid session conflicts with your daily admin account. The AC100 only supports one active session per account — logging into the web UI will invalidate HA's token (the integration auto-recovers, but there will be a brief interruption).
 - Communication is over **HTTP** (the AC100 hardware does not support HTTPS). Deploy on a trusted local network.
 - MAC addresses from the AC100 API use dash-uppercase format (e.g., `10-B7-13-93-5E-C5`). The integration normalizes them to colon-lowercase format (e.g., `10:b7:13:93:5e:c5`) for HA compatibility.
 
