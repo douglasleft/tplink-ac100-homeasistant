@@ -174,8 +174,10 @@ class _APSensorBase(CoordinatorEntity[TLAC100DataCoordinator], SensorEntity):
         host: str, mac: str, ap_name: str, model_name: str,
     ) -> None:
         super().__init__(coordinator)
+        self._host = host
         self._mac = mac
-        self._attr_device_info = _ap_device_info(host, mac, ap_name, model_name)
+        self._ap_name_fallback = ap_name
+        self._model_name = model_name
 
     @property
     def _ap_info(self) -> dict:
@@ -185,6 +187,13 @@ class _APSensorBase(CoordinatorEntity[TLAC100DataCoordinator], SensorEntity):
             if ap.get("mac") == self._mac:
                 return ap
         return {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = self._ap_info
+        entry_name = info.get("entry_name") if info else None
+        ap_name = urllib.parse.unquote(entry_name) if entry_name else self._ap_name_fallback
+        return _ap_device_info(self._host, self._mac, ap_name, self._model_name)
 
 
 class APClientsSensor(_APSensorBase):

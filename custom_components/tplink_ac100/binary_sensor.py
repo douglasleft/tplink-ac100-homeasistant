@@ -74,15 +74,11 @@ class APStatusBinarySensor(
         model_name: str,
     ) -> None:
         super().__init__(coordinator)
+        self._host = host
         self._mac = mac
+        self._ap_name_fallback = ap_name
+        self._model_name = model_name
         self._attr_unique_id = f"ac100_ap_{mac.replace(':', '_')}_status"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, mac)},
-            name=ap_name,
-            manufacturer="TP-Link",
-            model=model_name or None,
-            via_device=(DOMAIN, host),
-        )
 
     @property
     def _ap_info(self) -> dict:
@@ -92,6 +88,19 @@ class APStatusBinarySensor(
             if ap.get("mac") == self._mac:
                 return ap
         return {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = self._ap_info
+        entry_name = info.get("entry_name") if info else None
+        ap_name = urllib.parse.unquote(entry_name) if entry_name else self._ap_name_fallback
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._mac)},
+            name=ap_name,
+            manufacturer="TP-Link",
+            model=self._model_name or None,
+            via_device=(DOMAIN, self._host),
+        )
 
     @property
     def is_on(self) -> bool | None:
