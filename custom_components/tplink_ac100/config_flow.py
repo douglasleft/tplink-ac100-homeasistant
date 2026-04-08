@@ -100,8 +100,43 @@ class TLAC100OptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            new_username = user_input.pop(CONF_USERNAME)
+            new_password = user_input.pop(CONF_PASSWORD)
+
+            old_username = self._config_entry.data[CONF_USERNAME]
+            old_password = self._config_entry.data[CONF_PASSWORD]
+
+            # If credentials changed, verify them before saving
+            if new_username != old_username or new_password != old_password:
+                session = async_get_clientsession(self.hass)
+                client = TLAC100ApiClient(
+                    host=self._config_entry.data[CONF_HOST],
+                    username=new_username,
+                    password=new_password,
+                    session=session,
+                )
+                try:
+                    await client.async_login()
+                except TLAC100ConnectionError:
+                    errors["base"] = "cannot_connect"
+                except TLAC100AuthError:
+                    errors["base"] = "invalid_auth"
+                except Exception:
+                    _LOGGER.exception("Unexpected exception during credential update")
+                    errors["base"] = "unknown"
+
+            if not errors:
+                # Update config entry data with new credentials
+                new_data = {**self._config_entry.data}
+                new_data[CONF_USERNAME] = new_username
+                new_data[CONF_PASSWORD] = new_password
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry, data=new_data
+                )
+                return self.async_create_entry(title="", data=user_input)
 
         current_scan = self._config_entry.options.get(
             CONF_SCAN_INTERVAL,
@@ -111,11 +146,15 @@ class TLAC100OptionsFlow(config_entries.OptionsFlow):
             CONF_CONSIDER_HOME,
             self._config_entry.data.get(CONF_CONSIDER_HOME, DEFAULT_CONSIDER_HOME),
         )
+        current_username = self._config_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
+        current_password = self._config_entry.data.get(CONF_PASSWORD, "")
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_USERNAME, default=current_username): str,
+                    vol.Required(CONF_PASSWORD, default=current_password): str,
                     vol.Optional(CONF_SCAN_INTERVAL, default=current_scan): vol.All(
                         int, vol.Range(min=10, max=300)
                     ),
@@ -124,4 +163,5 @@ class TLAC100OptionsFlow(config_entries.OptionsFlow):
                     ),
                 }
             ),
+            errors=errors,
         )

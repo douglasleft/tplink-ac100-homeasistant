@@ -30,13 +30,22 @@
       "init": {
         "title": "AC100 Settings",
         "data": {
+          "username": "Username",
+          "password": "Password",
           "scan_interval": "Scan interval (seconds)",
           "consider_home": "Consider home (seconds)"
         },
         "data_description": {
+          "username": "Login username for the AC100 controller.",
+          "password": "Login password for the AC100 controller.",
           "consider_home": "Time to wait before marking a device as away after it disconnects."
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to AC100. Check the IP address.",
+      "invalid_auth": "Authentication failed. Check username and password.",
+      "unknown": "Unexpected error occurred."
     }
   }
 }
